@@ -3,9 +3,8 @@ Copyright (c) 2020 Bjørn Kjos-Hanssen. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Author: Bjørn Kjos-Hanssen.
 Zulip chat help from:
-Johan Commelin, Kyle Miller, Pedro Minicz, Reid Barton, Scott Morrison, Heather Macbeth.
+Alex J. Best, Johan Commelin, Kyle Miller, Pedro Minicz, Reid Barton, Scott Morrison, Heather Macbeth.
 -/
-import tactic.ring2
 import data.finset  -- finite set
 import data.set -- to make backslash work as set difference
 import data.finset.basic
@@ -15,22 +14,15 @@ import data.real.basic
 
 /-!
 # A theorem on metrics based on min and max
-
 In this file we give a formal proof of Theorem 17 from [KNYHLM21].
 It asserts that d(X,Y)= m min(|X\Y|, |Y\X|) + M max(|X\Y|, |Y\X|) is a metric
 if and only if m ≤ M.
-
 ## Main results
-
 - `seventeen`: the proof of Theorem 17.
 - `instance jaccard_numerator.metric_space`: the realization as a `metric_space` type.
-
 ## Notation
-
  - `|_|` : Notation for cardinality.
-
 ## References
-
 See [KNYHLM21] for the original proof.
 -/
 
@@ -68,6 +60,7 @@ lemma card_rot_cast (X Y Z : finset α) : ((|X\Y| + |Y\Z| + |Z\X|):ℝ) = ((|X\Z
     by { norm_cast,exact this }
 
 variables {m M : ℝ}
+--set_option profiler true
 
 def δ : ℝ → ℝ → finset α → (finset α → ℝ) :=
     λ m M A B, M * ↑ (max (|A\B|) (|B\A|)) + m * ↑ (min (|A\B|) (|B\A|))
@@ -75,17 +68,25 @@ def δ : ℝ → ℝ → finset α → (finset α → ℝ) :=
 theorem delta_cast {m M:ℝ} {A B : finset α} :
     δ m M A B = M * (max ↑(|A\B|) ↑(|B\A|)) + m * (min ↑(|A\B|) ↑(|B\A|)) := by norm_cast
 
-theorem delta_comm {m M : ℝ} {A B : finset α}: δ m M A B = δ m M B A :=
-    calc δ m M A B =
-          M * max (|A\B|) (|B\A|) + m * min (|A\B|) (|B\A|): by tidy
-    ... = M * max (|B\A|) (|A\B|) + m * min (|B\A|) (|A\B|): by begin rw[max_comm,min_comm] end
-    ... = δ m M B A: by tidy
+theorem delta_comm {m M : ℝ} {A B : finset α}: δ m M A B = δ m M B A := -- improved December 25, 2020
+    calc δ m M A B = M * ↑ (max (|A\B|) (|B\A|)) + m * ↑ (min (|A\B|) (|B\A|)) : by rw[δ]
+               ... = M * max (|A\B|) (|B\A|) + m * min (|A\B|) (|B\A|)         : by norm_cast
+               ... = M * max (|B\A|) (|A\B|) + m * min (|B\A|) (|A\B|)         : by rw[max_comm,min_comm]
+               ... = M * ↑ (max (|B\A|) (|A\B|)) + m * ↑ (min (|B\A|) (|A\B|)) : by norm_cast
+               ... = δ m M B A                                                 : by rw[δ]
 
-theorem delta_self (X : finset α): δ m M X X = 0 :=
-    let x_x := |X \ X| in
-    have used_by_finish: x_x = 0, from by finish,
-    calc  δ m M X X = M * ((max x_x x_x):ℝ) + m * ((min x_x x_x):ℝ): by norm_cast
-                ... = 0: by finish
+lemma card_sdiff_self (X : finset α) : |X \ X| = 0 :=
+  calc |X \ X| = |(∅: finset α)|: by rw (sdiff_self X)
+           ... = 0: card_empty
+
+theorem delta_self (X : finset α): δ m M X X = 0 := -- improved December 25, 2020
+    calc  δ m M X X = M * ((max (|X \ X|) (|X \ X|)):ℝ) + m * ((min (|X \ X|) (|X \ X|)):ℝ) : by norm_cast
+                ... = M * ((max 0   0  ):ℝ)             + m * ((min 0   0  ):ℝ)             : by {rw[card_sdiff_self],norm_cast,}
+                ... = M * ((max (0:ℝ)   (0:ℝ)  ))       + m * ((min (0:ℝ)   (0:ℝ)  ))       : by norm_cast
+                ... = M * (0:ℝ)                         + m * (0:ℝ)                         : by rw[max_self (0:ℝ), min_self (0:ℝ)]
+                ... = 0                                                                     : by rw[mul_zero, zero_add,mul_zero]
+
+
 
 lemma subseteq_of_card_zero (x y : finset α) : |x \ y| = 0 → x ⊆ y :=  
     λ h : |x \ y| = 0,
@@ -110,16 +111,17 @@ lemma eq_zero_of_nonneg_of_nonneg_of_add_zero {a b : ℝ} : 0 ≤ a → 0 ≤ b 
  
 
 theorem subset_of_delta_eq_zero (hm: 0 < m) (hM: m ≤ M) (X Y : finset α) (h: δ m M X Y = 0) : X ⊆ Y :=
-    let x_y := |X \ Y| in let y_x := |Y \ X| in
+    let x_y := |X \ Y| in let y_x := |Y \ X| in -- improved December 25, 2020
     /- The following interacts poorly with casting
     let maxN := max x_y y_x in let minN := min x_y y_x in
     let maxR := (maxN : ℝ) in let minR := (minN : ℝ) in
     -/
-    have used_by_finish: δ m M X Y =  M * ((max x_y y_x):ℝ) + m * ((min x_y y_x):ℝ), from by { norm_cast },
-    have δ_0: 0 = M * ((max x_y y_x):ℝ) + m * ((min x_y y_x):ℝ), from by finish,
+    have δ_0: 0 = M * ((max x_y y_x):ℝ) + m * ((min x_y y_x):ℝ), from calc
+              0 = δ m M X Y : by rw h
+            ... = M * ((max x_y y_x):ℝ) + m * ((min x_y y_x):ℝ) : by norm_cast,
     have not_pos_δ: ¬ 0 < M * ((max x_y y_x):ℝ) + m * ((min x_y y_x):ℝ), from
         (iff.elim_right (not_lt_iff_eq_or_lt)) (or.inl δ_0),
-    have min_nonneg: 0 ≤ ((min x_y y_x):ℝ), from
+    have min_nonneg: 0 ≤ ((min x_y y_x):ℝ),
         begin norm_cast, exact (le_min (nat.zero_le x_y) (nat.zero_le y_x)) end,
     have M_pos: 0 < M, from calc
                 0 < m : hm
@@ -129,7 +131,7 @@ theorem subset_of_delta_eq_zero (hm: 0 < m) (hM: m ≤ M) (X Y : finset α) (h: 
         λ h: 0 < x_y,
         have strict_x: 0 <  (max x_y y_x), from
             (iff.elim_right lt_max_iff) (or.inl h),
-        have cast_x: 0 <  ((max x_y y_x):ℝ), from
+        have cast_x: 0 <  ((max x_y y_x):ℝ),
             begin norm_cast, exact strict_x end,
         have Mx_pos: 0 < (M * ((max x_y y_x):ℝ)), from
             mul_pos M_pos cast_x,
@@ -159,7 +161,7 @@ theorem sdiff_triangle (A B C: finset α): |A\C| ≤ |A\B| + |B\C| :=
 lemma venn (X Y : finset α): X = X\Y ∪ (X ∩ Y) := begin ext, simp, tauto! end
 
 lemma venn_card (X Y : finset α): |X| = |X\Y| + |X ∩ Y| :=
-    have h: disjoint (X\Y) (X ∩ Y), from by tidy,
+    have h: disjoint (X\Y) (X ∩ Y), by tidy,
     calc
     |X| = |X \ Y  ∪  X ∩ Y| : by rw ← (venn X Y)
     ... = |X \ Y| + |X ∩ Y| : finset.card_disjoint_union h
@@ -167,15 +169,15 @@ lemma venn_card (X Y : finset α): |X| = |X\Y| + |X ∩ Y| :=
 
 lemma sdiff_card (X Y : finset α): |Y| ≤ |X| → |Y\X| ≤ |X\Y| :=
     assume h: |Y| ≤ |X|,
-    have h₀: |Y\X| + |Y ∩ X| ≤ |X\Y| + |X ∩ Y|, from
+    have h₀: |Y\X| + |Y ∩ X| ≤ |X\Y| + |X ∩ Y|,
         begin
             rw (venn_card X Y) at h,
             rw (venn_card Y X) at h,
             exact h
         end,
-    have h₁: Y ∩ X = X ∩ Y, from begin tidy end,
-    have h₂: |Y ∩ X| = |X ∩ Y|, from begin rw h₁ end,
-    have h₃: |Y\X| + |X ∩ Y| ≤ |X\Y| + |X ∩ Y|, from
+    have h₁: Y ∩ X = X ∩ Y, {tidy},
+    have h₂: |Y ∩ X| = |X ∩ Y|, {rw h₁},
+    have h₃: |Y\X| + |X ∩ Y| ≤ |X\Y| + |X ∩ Y|,
         begin rw h₂ at h₀, exact h₀ end,
     begin tidy end -- tidy is now able to figure out that a+c ≤ b+c → a ≤ c should be used on h₃
 
@@ -209,9 +211,9 @@ def triangle_inequality (m M :ℝ) (X Y Z: finset α) : Prop :=
 lemma seventeen_right_yzx {m M :ℝ} {X Y Z: finset α} :
     0 ≤ m → m ≤ M → |Y| ≤ |Z| ∧ |Z| ≤ |X| → triangle_inequality m M X Y Z
     :=
-    let x := |X| in let y := |Y| in let z := |Z| in
-    let x_z := |X\Z| in let z_x := |Z\X| in let y_z := |Y\Z| in
-    let z_y := |Z\Y| in let x_y := |X\Y| in let y_x := |Y\X| in
+    let x := |X|, y := |Y|, z := |Z|,
+        x_z := |X\Z|, z_x := |Z\X|, y_z := |Y\Z|,
+        z_y := |Z\Y|, x_y := |X\Y|, y_x := |Y\X| in
     λ hm : 0 ≤ m, λ h: m ≤ M,
     have hM : 0 ≤ M, from le_trans hm h,
     assume h₀: y ≤ z ∧ z ≤ x,
@@ -229,7 +231,7 @@ lemma seventeen_right_yzx {m M :ℝ} {X Y Z: finset α} :
     δ m M X Y = M * (x_y) + m * (|Y\X|)                   : maxmin_2 h₁
           ... ≤ M * (x_y) + m * ((y_z) + (z_x))           : add_le_add_left mst_yzx (M * (x_y))
           ... ≤ M * (x_z + z_y) + m * (y_z + z_x)         : add_le_add_right mst_xzy (m * ((y_z) + (z_x)))
-          ... = (M * x_z + m * z_x) + (M * z_y + m * y_z) : by ring2
+          ... = (M * x_z + m * z_x) + (M * z_y + m * y_z) : by ring
           ... = δ m M X Z                     + δ m M Z Y : by rw[dxz,dzy]
 
 lemma co_sdiff (X Y U : finset α):
@@ -282,8 +284,8 @@ theorem seventeen_right_yxz {X Y Z : finset α}:
     have dxz: δ m M X Z = M * z_x + m * x_z, from calc
                 δ m M X Z = δ m M Z X                 : delta_comm
                     ... = M * (z_x) + m * (x_z) : maxmin_2 (and.elim_right h₀), 
-    have Mmpos: M-m ≥ 0, from by finish,
-    have h02: 0 ≤ (2:ℝ), from by {have zt: 0 ≤ 2, from nat.zero_le 2, norm_cast, exact zt, },
+    have Mmpos: 0 ≤ M-m, from sub_nonneg_of_le h,
+    have h02: 0 ≤ (2:ℝ), by {have zt: 0 ≤ 2, from nat.zero_le 2, norm_cast, exact zt, },
     have h2m: 0 ≤ 2*m, from mul_nonneg h02 hm,
     have tri_1:   2 * m * y_x ≤ 2 * m * (y_z + z_x), from mul_sdiff_tri (2*m) h2m Y Z X,
     have tri_2: (M-m) * x_y ≤ (M-m) * (x_z + z_y), from mul_sdiff_tri (M-m) Mmpos X Z Y,
@@ -296,12 +298,12 @@ theorem seventeen_right_yxz {X Y Z : finset α}:
             term_3 := (m*(x_z +z_y +y_x) + (M-m) * z_y + m*z_x + m*y_z)
         in calc   (δ m M X Y)     + (m * y_x)
             = (M * x_y + m * y_x) + (m * y_x)                             : by rw dxy
-        ... = M * x_y + 2 * m * y_x                                       : by ring2
+        ... = M * x_y + 2 * m * y_x                                       : by ring
         ... ≤ M * x_y + 2 * m * (y_z+z_x)                                 : add_le_add_left tri_1 term_1
         ... = m*(x_y+y_z+z_x) + m*(y_z+z_x) + (M-m)*x_y                   : by ring
         ... = m*(x_z+z_y+y_x) + m*(y_z+z_x) + (M-m)*x_y                   : by rw card_rot_cast
         ... ≤ m*(x_z+z_y+y_x) + m*(y_z+z_x) + (M-m)*(x_z+ z_y)            : add_le_add_left tri_2 term_2
-        ... = m*(x_z+z_y+y_x) + (M-m) * z_y + m*z_x + m*y_z + (M-m) * x_z : by ring2
+        ... = m*(x_z+z_y+y_x) + (M-m) * z_y + m*z_x + m*y_z + (M-m) * x_z : by ring
         ... ≤ m*(x_z+z_y+y_x) + (M-m) * z_y + m*z_x + m*y_z + (M-m) * z_x : add_le_add_left tri_3 term_3
         ... = (M * z_x + m * x_z)        + (M * z_y + m * y_z) + (m * y_x): by ring
         ... = (δ m M X Z                 +          δ m M Z Y) + (m * y_x): by rw[dxz,dzy],
@@ -324,9 +326,9 @@ theorem seventeen_right_zyx{m M : ℝ} {X Y Z : finset α}:
         Y' : finset α := (X ∪ Y ∪ Z) \ Y,
         X' : finset α := (X ∪ Y ∪ Z) \ X
     in
-    have hx: X ⊆ U, from by {tidy,cc},
-    have hy: Y ⊆ U, from by {tidy,cc},
-    have hz: Z ⊆ U, from by {tidy,cc},
+    have hx: X ⊆ U, by {tidy,cc},
+    have hy: Y ⊆ U, by {tidy,cc},
+    have hz: Z ⊆ U, by {tidy,cc},
     
     have and1: |X'| ≤ |Y'|, from sdiff_card_le Y X U hy hx h.right,
     have and2: |Y'| ≤ |Z'|, from sdiff_card_le Z Y U hz hy h.left,
@@ -407,43 +409,88 @@ def s_0 : finset ℕ := ({0}: finset ℕ)
 def s_1 : finset ℕ := ({1}: finset ℕ)
 def s01 : finset ℕ := ({0,1} : finset ℕ)
 theorem seventeen: (∃ x y : α, x ≠ y) → 
-    0 ≤ m → (m ≤ M ↔ ∀ X Y Z : finset ℕ, triangle_inequality m M X Y Z) :=
+    0 ≤ m → (m ≤ M ↔ ∀ X Y Z : finset α, triangle_inequality m M X Y Z) :=
     λ typ : ∃ x y : α, x ≠ y,
     λ hm: 0 ≤ m,
     exists.elim typ (
         λ x : α, λ ty : ∃ y : α, x ≠ y,
         exists.elim ty (
             λ y : α, λ t : x ≠ y,
-            have h₀: m ≤ M → ∀ X Y Z : finset ℕ, triangle_inequality m M X Y Z, from
+            let s_x : finset α := ({x}: finset α) in
+            let s_y : finset α := ({y}: finset α) in
+            let sxy : finset α := ({x,y} : finset α) in
+            have h₀: m ≤ M → ∀ X Y Z : finset α, triangle_inequality m M X Y Z, from
                 λ h: m ≤ M, λ X Y Z, seventeen_right hm h,
-            have h₁: (∀ X Y Z : finset ℕ, triangle_inequality m M X Y Z) → m ≤ M, from
-                assume hyp: (∀ X Y Z : finset ℕ, triangle_inequality m M X Y Z),
-                have hh: δ m M {0} {1} ≤ δ m M {0} {0,1} + δ m M {0,1} {1}, from hyp {0} {1} {0,1},
-                have s_0\s_1 = {0}, from by finish, have s_1\s_0 = {1}, from by finish,
-                have s_0\s01 =   ∅, from by finish, have s01\s_0 = {1}, from by finish,
-                have s_1\s01 =  ∅ , from by finish, have s01\s_1 = {0}, from by finish,
-                -- finish actually uses the unnamed hypotheses
-                have cyx: (|s_1\s_0|:ℝ) = (1:ℝ), from by finish, have cxz: (|s_0\s01|:ℝ) = (0:ℝ), from by finish,
-                have czx: (|s01\s_0|:ℝ) = (1:ℝ), from by finish, have czy: (|s01\s_1|:ℝ) = (1:ℝ), from by finish,
-                have cyz: (|s_1\s01|:ℝ) = (0:ℝ), from by finish, have cxy: (|s_0\s_1|:ℝ) = (1:ℝ), from by finish,
-                have dxy: δ m M s_0 s_1 = M + m , from calc
-                    δ m M s_0 s_1 = M * max ↑(|s_0\s_1|) ↑(|s_1\s_0|)
-                                + m * min ↑(|s_0\s_1|) ↑(|s_1\s_0|): delta_cast
+            have h₁: (∀ X Y Z : finset α, triangle_inequality m M X Y Z) → m ≤ M, from
+                assume hyp: (∀ X Y Z : finset α, triangle_inequality m M X Y Z),
+                have hh: δ m M s_x s_y ≤ δ m M s_x sxy + δ m M sxy s_y, from hyp s_x s_y sxy,
+                have cyx: (|s_y\s_x|:ℝ) = (1:ℝ), from
+                  have g:|s_y\s_x| = |s_y|, from
+                    have h:s_y\s_x = s_y, by tidy,
+                    congr_arg finset.card h,
+                  have h:|s_y| = 1, from by tidy,
+                  have i:|s_y\s_x| = 1, from eq.trans g h,
+                by {norm_cast, exact i,},
+
+                have cxy: (|s_x\s_y|:ℝ) = (1:ℝ), from
+                  have g:|s_x\s_y| = |s_x|, from
+                    have h2:s_x\s_y = s_x, from by tidy,
+                    congr_arg finset.card h2,
+                  have i:|s_x| = 1, from by tidy,
+                  have |s_x\s_y| = 1, from eq.trans g i,
+                  by {norm_cast,exact this,},
+
+                have cxz: (|s_x\sxy|:ℝ) = (0:ℝ), from
+                  have g:|s_x\sxy| =   |(∅:finset α)|, from
+                    have h3:s_x\sxy =   ∅, from by tidy,
+                    congr_arg finset.card h3,
+                  have i:|(∅:finset α)| = 0, from by tidy,
+                  have |s_x\sxy| = 0, from eq.trans g i,
+                  by {norm_cast,exact this,},
+
+                have czx: (|sxy\s_x|:ℝ) = (1:ℝ), from
+                  have g:|sxy\s_x| = |s_y|, from
+                    have sxy\s_x = s_y, from by tidy,
+                    congr_arg finset.card this,
+                  have i:|s_y| = 1, from by tidy,
+                  have |sxy\s_x| = 1, from eq.trans g i,
+                  by {norm_cast, exact this,},
+
+                have cyz: (|s_y\sxy|:ℝ) = (0:ℝ), from
+                  have g:|s_y\sxy| =  |(∅:finset α)| , from
+                    have s_y\sxy =  ∅ , from by tidy,
+                    congr_arg finset.card this,
+                  have i:|(∅:finset α)| = 0, from by tidy,
+                  have |s_y\sxy| = 0, from eq.trans g i,
+                  by {norm_cast, exact this,},
+
+                have czy: (|sxy\s_y|:ℝ) = (1:ℝ), from
+                  have g:|sxy\s_y| = |s_x|, from
+                    have sxy\s_y = s_x, from by tidy,
+                    congr_arg finset.card this,
+                  have i:|s_x| = 1, from by tidy,
+                  have |sxy\s_y| = 1, from eq.trans g i,
+                  by {norm_cast, exact this,},
+
+
+                have dxy: δ m M s_x s_y = M + m , from calc
+                    δ m M s_x s_y = M * max ↑(|s_x\s_y|) ↑(|s_y\s_x|)
+                                + m * min ↑(|s_x\s_y|) ↑(|s_y\s_x|): delta_cast
                             ... = M * max    (1:ℝ)  (1:ℝ)   + m * min (1:ℝ)    (1:ℝ): by rw[cxy,cyx]
                             ... = M + m : by tidy,
-                have dxz: δ m M s_0 s01 = M, from calc
-                        δ m M s_0 s01 = M * max (|s_0\s01|) (|s01\s_0|)
-                                        + m * min (|s_0\s01|) (|s01\s_0|): delta_cast
+                have dxz: δ m M s_x sxy = M, from calc
+                        δ m M s_x sxy = M * max (|s_x\sxy|) (|sxy\s_x|)
+                                        + m * min (|s_x\sxy|) (|sxy\s_x|): delta_cast
                                     ... = M * max 0 1 + m * min 0 1: by rw[cxz,czx]
                                     ... = M  : by tidy,
-                have dzy: δ m M s01 s_1 = M, from calc
-                        δ m M s01 s_1 = M * max (|s01\s_1|) (|s_1\s01|)
-                                        + m * min (|s01\s_1|) (|s_1\s01|): delta_cast
+                have dzy: δ m M sxy s_y = M, from calc
+                        δ m M sxy s_y = M * max (|sxy\s_y|) (|s_y\sxy|)
+                                        + m * min (|sxy\s_y|) (|s_y\sxy|): delta_cast
                                     ... = M * max 1 0 + m * min (1) 0: by rw[czy,cyz]
                                     ... = M  : by tidy,
                 have add_le_add_left : M + m ≤ M + M, from calc
-                    M + m = δ m M s_0 s_1 : by rw[dxy] 
-                    ... ≤  δ m M s_0 s01 + δ m M s01 s_1: hh
+                    M + m = δ m M s_x s_y : by rw[dxy] 
+                    ... ≤  δ m M s_x sxy + δ m M sxy s_y: hh
                     ... = M + M: by begin rw[dxz,dzy] end,
                 le_of_add_le_add_left
                     add_le_add_left,
@@ -467,7 +514,7 @@ theorem seventeen: (∃ x y : α, x ≠ y) →
         dist               := λx y, δ m M x y,
         dist_self          := delta_self,
         eq_of_dist_eq_zero := eq_of_delta_eq_zero hm hM,
-        dist_comm          := λ x y, calc δ m M x y = δ m M y x: delta_comm,
+        dist_comm          := λ x y, delta_comm,
         dist_triangle      := λ x y z, ((iff.elim_left (seventeen typ (le_of_lt hm))) hM) x z y
     }
 end jaccard_numerator 
